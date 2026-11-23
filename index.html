@@ -35,9 +35,7 @@
 <main class="layout">
   <aside id="painel" class="painel" aria-label="Parâmetros"></aside>
 
-  <section class="direita">
-    <div class="resultado" id="resultado" aria-live="polite"></div>
-
+  <section class="centro">
     <div class="abas-vis" role="tablist" aria-label="Visualização">
       <button type="button" role="tab" class="aba-vis ativa" data-aba="montagem" aria-selected="true">Montagem</button>
       <button type="button" role="tab" class="aba-vis" data-aba="pecas" aria-selected="false">Peças</button>
@@ -70,15 +68,18 @@
       <div class="folhas" id="folhas"></div>
     </div>
 
-    <details class="grupo conf azul">
-      <summary>Conferência com os nomes do Fusion</summary>
-      <div class="conteudo">
-        <p class="nota">Parâmetros com os nomes usados no Fusion, ao lado do bucky v24. LE aparece como largura do canal (aba medida + f_seringa), como era no v24.</p>
-        <div class="tabela-caixa"><table id="tabConf"><thead><tr><th>Nome</th><th class="num">App</th><th class="num">v24</th><th class="num">Dif.</th></tr></thead><tbody></tbody></table></div>
-      </div>
-    </details>
   </section>
+
+  <aside class="lateral" aria-label="Resultado">
+    <div class="resultado" id="resultado" aria-live="polite"></div>
+  </aside>
 </main>
+
+<footer class="rodape">
+  <p><strong>Bucky</strong> é um projeto da disciplina <strong>Aplicação de Prototipagem e Modelagem</strong>.</p>
+  <p>Autor: Pedro Farage · Professor: Prof. Cheng Liang-Yee</p>
+  <p>Escola Politécnica da Universidade de São Paulo</p>
+</footer>
 <script type="module" src="src/main.js"></script>
 </body>
 </html>

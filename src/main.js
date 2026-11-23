@@ -16,10 +16,6 @@ import { montarFormulario, h } from './ui/formulario.js';
 import { Visor } from './ui/visor3d.js';
 
 const CHAVE = 'bucky-app-estado-v2';
-const V24 = { L0: 80.2, L1: 130, L2: 150, d1: 89.9, d2: 103.2, d3: 61.9, d4: 120, xA: 88.3, yA: 50.2, dg0: 83.5, dg1: 83.5,
-  D20: 20.7, D10: 16.2, D5: 13.2, db20: 9.4, db10: 9.4, db5: 5.5, LE20: 21.5, LE10: 19, LE5: 15, ee10: 2,
-  e: 3, hb: 6, se: 10, D0: 8, D1: 8, alpha: 90, Dpino: 2.5, Lb: 88.3, Rd: 105.96, Rb: 150, fe10: 4, nd: 4, rp: 50, alfa: 35, Ld: 53.5 };
-const AJUSTE_LE = { LE20: 1, LE10: 1, LE5: 1 };
 
 const $ = s => document.querySelector(s);
 const fmt = (v, d = 1) => Number.isFinite(v) ? v.toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—';
@@ -58,7 +54,7 @@ function recalcular(regerar = true) {
     $('#avisos').hidden = !erros.length;
     $('#avisos').textContent = erros.length ? 'Não foi possível gerar: ' + erros.join('; ') : '';
   }
-  resultado(); tabela(); conferencia(); mostrar(!primeira); primeira = false;
+  resultado(); tabela(); mostrar(!primeira); primeira = false;
   if (aba === 'desenhos') desenhos();
 }
 
@@ -150,18 +146,6 @@ function tabela() {
     tb.append(tr);
   }
   $('#resumo').textContent = `${total} peças impressas, cerca de ${fmt(massa, 0)} g de ${estado.entradas.material.nome}`;
-}
-
-function conferencia() {
-  const F = nomesFusion(P), tb = $('#tabConf tbody'); tb.innerHTML = '';
-  for (const [k, v] of Object.entries(F)) {
-    const ref = V24[k] !== undefined ? V24[k] : null;
-    const comp = AJUSTE_LE[k] ? v + P.f_seringa : v;
-    const dif = ref === null ? null : comp - ref;
-    tb.append(h('tr', {}, h('td', {}, h('code', {}, k)), h('td', { class: 'num' }, fmt(comp, 2)),
-      h('td', { class: 'num' }, ref === null ? '—' : fmt(ref, 2)),
-      h('td', { class: 'num ' + (dif !== null && Math.abs(dif) > 0.05 ? 'dif' : '') }, dif === null ? '' : (Math.abs(dif) < 0.005 ? '=' : (dif > 0 ? '+' : '') + fmt(dif, 2)))));
-  }
 }
 
 function gerarFolhas() {
