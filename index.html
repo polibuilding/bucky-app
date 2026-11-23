@@ -3,10 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bucky · braço por seringas</title>
+<meta name="color-scheme" content="light">
+<title>Bucky · braço com seringas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Semi+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="src/estilo.css">
 <script type="importmap">
 {
@@ -20,36 +21,60 @@
 </head>
 <body>
 <header class="topo">
-  <div>
+  <div class="marca">
     <h1>Bucky</h1>
-    <p>Braço hidráulico por seringas. Informe as seringas, a bola e a impressora; o app gera as peças para imprimir.</p>
+    <p>Braço hidráulico com seringas: informe seus parâmetros e seu critério de otimização, e geraremos o seu Bucky otimizado!</p>
   </div>
   <div class="acoes">
-    <button type="button" class="btn primario" id="btnZip">Baixar todas as peças (.zip)</button>
-    <button type="button" class="btn" id="btnPadrao">Voltar ao padrão</button>
+    <button type="button" class="btn primario" id="btnOtimizar">Otimizar</button>
+    <button type="button" class="btn amarelo" id="btnZip">Baixar peças e desenhos (.zip)</button>
+    <button type="button" class="btn" id="btnExemplo">Voltar ao exemplo</button>
   </div>
 </header>
-<p class="etapa">Etapa 1 de 4: parâmetros e peças estruturais. Próximas: otimizador e garra, montagem em 3D, desenhos técnicos.</p>
+
 <main class="layout">
   <aside id="painel" class="painel" aria-label="Parâmetros"></aside>
-  <section class="pecas" aria-label="Peças">
-    <div class="visor-caixa">
-      <div class="visor-barra"><span id="rotVisor">Todas as peças</span><button type="button" class="btn mini" id="verTodas">Ver todas</button></div>
-      <div id="visor" class="visor"><p id="carregando" class="carregando">Carregando o gerador de peças…</p></div>
+
+  <section class="direita">
+    <div class="resultado" id="resultado" aria-live="polite"></div>
+
+    <div class="abas-vis" role="tablist" aria-label="Visualização">
+      <button type="button" role="tab" class="aba-vis ativa" data-aba="montagem" aria-selected="true">Montagem</button>
+      <button type="button" role="tab" class="aba-vis" data-aba="pecas" aria-selected="false">Peças</button>
+      <button type="button" role="tab" class="aba-vis" data-aba="desenhos" aria-selected="false">Desenhos</button>
     </div>
+
+    <div class="visor-caixa" id="caixaVisor">
+      <div class="visor-barra"><span id="rotVisor">Braço montado</span><button type="button" class="btn mini" id="verTodas" hidden>Ver todas</button></div>
+      <div id="visor" class="visor"><p id="carregando" class="carregando">Carregando o gerador de peças…</p></div>
+      <div class="controles" id="controles">
+        <label class="ctrl azul"><span>Giro</span><input type="range" min="0" max="100" value="50" data-junta="giro"><output></output></label>
+        <label class="ctrl amarelo"><span>Ombro</span><input type="range" min="0" max="100" value="45" data-junta="ombro"><output></output></label>
+        <label class="ctrl azul"><span>Cotovelo</span><input type="range" min="0" max="100" value="55" data-junta="cotovelo"><output></output></label>
+        <label class="ctrl amarelo"><span>Garra</span><input type="range" min="0" max="100" value="0" data-junta="garra"><output></output></label>
+      </div>
+    </div>
+
     <p class="aviso" id="avisos" role="status" hidden></p>
-    <div class="tabela-caixa">
+
+    <div id="painelPecas" class="tabela-caixa" hidden>
       <table id="tabPecas">
         <caption><span id="resumo"></span><span id="tempo" class="sub"></span></caption>
         <thead><tr><th>Peça</th><th class="num">Qtd</th><th class="num">Tamanho (mm)</th><th class="num">Massa (g)</th><th>Impressora</th><th></th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
-    <details class="grupo conf">
-      <summary>Conferência com o Fusion (bucky v24)</summary>
-      <p class="nota">Parâmetros com os nomes do Fusion. LE aparece como largura do canal (aba medida + f_seringa), como era no v24.</p>
-      <div class="tabela-caixa">
-        <table id="tabConf"><thead><tr><th>Nome</th><th class="num">App</th><th class="num">v24</th><th class="num">Dif.</th></tr></thead><tbody></tbody></table>
+
+    <div id="painelDesenhos" class="desenhos" hidden>
+      <div class="desenhos-barra"><span id="rotDesenhos">Folhas A4 com as cotas de cada peça</span><button type="button" class="btn mini" id="btnPdf">Baixar PDF</button></div>
+      <div class="folhas" id="folhas"></div>
+    </div>
+
+    <details class="grupo conf azul">
+      <summary>Conferência com os nomes do Fusion</summary>
+      <div class="conteudo">
+        <p class="nota">Parâmetros com os nomes usados no Fusion, ao lado do bucky v24. LE aparece como largura do canal (aba medida + f_seringa), como era no v24.</p>
+        <div class="tabela-caixa"><table id="tabConf"><thead><tr><th>Nome</th><th class="num">App</th><th class="num">v24</th><th class="num">Dif.</th></tr></thead><tbody></tbody></table></div>
       </div>
     </details>
   </section>
