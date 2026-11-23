@@ -1,0 +1,17 @@
+{
+  "name": "bucky-app",
+  "version": "1.0.0",
+  "description": "Braço hidráulico por seringas: parâmetros, otimizador e peças",
+  "type": "module",
+  "scripts": {
+    "test": "node tests/comparar-v24.mjs && node tests/varredura.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "private": true,
+  "devDependencies": {
+    "manifold-3d": "^3.5.5",
+    "three": "^0.169.0"
+  }
+}
