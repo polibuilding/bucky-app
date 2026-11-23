@@ -1,45 +1,126 @@
-/* Bucky: aplicativo do braço hidráulico por seringas.
-   Etapa 1: parâmetros, derivados e geração das peças estruturais em STL. */
+/* Bucky: aplicativo do braço hidráulico com seringas. */
 import { carregarKernel, novoGeo } from './geometria/kernel.js';
-import { estadoPadrao, clonar } from './modelo/parametros.js';
+import { estadoPadrao } from './modelo/parametros.js';
 import { derivar, nomesFusion } from './modelo/derivados.js';
 import { FOLGAS_PADRAO } from './modelo/folgas.js';
+import { avaliar, paraDimensoes } from './modelo/cinematica.js';
+import { otimizar, CRITERIOS } from './modelo/otimizador.js';
+import { montar } from './montagem/montagem.js';
 import { PECAS, gerarPeca } from './pecas/index.js';
+import { folhasDasPecas, A4 } from './desenhos/desenhar.js';
+import { paraSVG } from './desenhos/folha.js';
 import { stlBinario } from './exportar/stl.js';
+import { pdfDeFolhas } from './exportar/pdf.js';
 import { criarZip } from './exportar/zip.js';
 import { montarFormulario, h } from './ui/formulario.js';
 import { Visor } from './ui/visor3d.js';
 
-const CHAVE = 'bucky-app-estado-v1';
-/* Valores do Fusion (bucky v24) para conferência. */
+const CHAVE = 'bucky-app-estado-v2';
 const V24 = { L0: 80.2, L1: 130, L2: 150, d1: 89.9, d2: 103.2, d3: 61.9, d4: 120, xA: 88.3, yA: 50.2, dg0: 83.5, dg1: 83.5,
   D20: 20.7, D10: 16.2, D5: 13.2, db20: 9.4, db10: 9.4, db5: 5.5, LE20: 21.5, LE10: 19, LE5: 15, ee10: 2,
-  e: 3, hb: 6, se: 10, D0: 8, D1: 8, alpha: 90, Dpino: 2.5, Lb: 88.3, Rd: 105.96, Rb: 150, fe10: 4, nd: 4 };
-/* No v24, LE é a largura do canal; aqui LE é a aba medida e o canal = LE + f_seringa. */
+  e: 3, hb: 6, se: 10, D0: 8, D1: 8, alpha: 90, Dpino: 2.5, Lb: 88.3, Rd: 105.96, Rb: 150, fe10: 4, nd: 4, rp: 50, alfa: 35, Ld: 53.5 };
 const AJUSTE_LE = { LE20: 1, LE10: 1, LE5: 1 };
 
 const $ = s => document.querySelector(s);
-let estado = carregar(), kernel = null, P = null, malhas = {}, selecionada = 'todas', tempo = null, primeira = true;
+const fmt = (v, d = 1) => Number.isFinite(v) ? v.toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—';
+let estado = carregar(), kernel = null, P = null, R = null, malhas = {}, cores = {};
+let aba = 'montagem', selecionada = 'todas', tempo = null, primeira = true, folhasCache = null, ocupado = false;
+const juntas = { giro: 0.5, ombro: 0.45, cotovelo: 0.55, garra: 0 };
 
 function carregar() {
-  const base = estadoPadrao();
-  base.folgas = { ...FOLGAS_PADRAO };
-  try {
-    const raw = localStorage.getItem(CHAVE);
-    if (raw) { const o = JSON.parse(raw); return mesclar(base, o); }
-  } catch (e) { /* armazenamento indisponível */ }
-  return base;
+  const b = estadoPadrao(); b.folgas = { ...FOLGAS_PADRAO };
+  try { const raw = localStorage.getItem(CHAVE); if (raw) return mesclar(b, JSON.parse(raw)); } catch (e) { /* sem armazenamento */ }
+  return b;
 }
 function mesclar(b, o) {
   for (const k in b) if (o && o[k] !== undefined) {
     if (typeof b[k] === 'object' && b[k] !== null) mesclar(b[k], o[k]);
     else if (typeof o[k] === typeof b[k]) b[k] = o[k];
   }
+  if (o && typeof o.assinatura === 'string') b.assinatura = o.assinatura;
   return b;
 }
 function salvar() { try { localStorage.setItem(CHAVE, JSON.stringify(estado)); } catch (e) { /* ignora */ } }
+const assinatura = () => JSON.stringify([estado.entradas, estado.construcao, estado.folgas]);
 
-const fmt = (v, d = 1) => Number.isFinite(v) ? v.toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—';
+/* ---------- cálculo ---------- */
+function recalcular(regerar = true) {
+  P = derivar(estado);
+  R = avaliar(P);
+  if (regerar) {
+    malhas = {}; cores = {}; folhasCache = null;
+    const erros = [], t0 = performance.now();
+    for (const p of PECAS) {
+      cores[p.id] = p.cor;
+      try { malhas[p.id] = gerarPeca(novoGeo, kernel, p, P); } catch (err) { erros.push(`${p.nome}: ${err.message}`); }
+    }
+    $('#tempo').textContent = `${PECAS.length} peças geradas em ${fmt(performance.now() - t0, 0)} ms`;
+    $('#avisos').hidden = !erros.length;
+    $('#avisos').textContent = erros.length ? 'Não foi possível gerar: ' + erros.join('; ') : '';
+  }
+  resultado(); tabela(); conferencia(); mostrar(!primeira); primeira = false;
+  if (aba === 'desenhos') desenhos();
+}
+
+/* ---------- resultado ---------- */
+function resultado() {
+  const box = $('#resultado'); box.innerHTML = '';
+  const crit = estado.entradas.criterio, desat = estado.origem === 'otimizado' && estado.assinatura !== assinatura();
+  const est = h('div', { class: 'estado' });
+  if (estado.origem === 'v24') est.append(h('span', { class: 'selo amarelo' }, 'Exemplo'), 'Bucky v24, com as medidas do Fusion. Clique em Otimizar para gerar o seu.');
+  else if (desat) est.append(h('span', { class: 'selo nao' }, 'Desatualizado'), 'As entradas mudaram depois da última otimização. Otimize de novo.');
+  else est.append(h('span', { class: 'selo azul' }, 'Otimizado'), `Melhor configuração para: ${CRITERIOS[estado.criterioUsado || crit]?.rot.toLowerCase() || ''}.`);
+  est.append(h('span', { class: 'selo ' + (R.ok ? 'ok' : 'nao') }, R.ok ? 'atende a todas as verificações' : 'há verificações não atendidas'));
+  box.append(est);
+  const rho = estado.entradas.material.densidade / 1000;
+  let massa = 0; for (const p of PECAS) if (malhas[p.id]) massa += p.qtd(P) * malhas[p.id].volume * rho;
+  const m = [
+    ['area', CRITERIOS.area.mostrar(R.m.A), 'Área de alcance'],
+    ['volume', CRITERIOS.volume.mostrar(R.m.V), 'Volume de alcance'],
+    ['', `${fmt(P.L1, 0)} / ${fmt(P.L2, 0)} mm`, 'Braço / antebraço'],
+    ['', `${fmt(R.FS1, 2)} / ${fmt(R.FS2, 2)}`, 'Segurança ombro / cotovelo'],
+    ['', `${fmt(P.garra.FS || 0, 1)}`, 'Segurança da pega'],
+    ['', `${fmt(massa, 0)} g`, 'Plástico impresso'],
+  ];
+  box.append(h('div', { class: 'metricas' }, ...m.map(([k, v, r]) => h('div', { class: 'metrica' + (k && k === crit ? ' destaque' : '') }, h('div', { class: 'v' }, v), h('div', { class: 'r' }, r)))));
+  const todas = [...R.checks, ...(P.garra.checks || [])];
+  const falhas = todas.filter(c => c[1] < 0).length;
+  const det = h('details', { class: 'checks' }, h('summary', {}, `Verificações (${todas.length - falhas} de ${todas.length} atendidas)`),
+    h('ul', {}, ...todas.map(([n, v]) => h('li', { class: v < 0 ? 'nao' : '' }, h('span', {}, n), h('span', {}, v < 0 ? 'não atende' : 'ok')))));
+  if (falhas) det.open = true;
+  box.append(det);
+}
+
+/* ---------- visualização ---------- */
+function mostrar(manter = false) {
+  if (!kernel) return;
+  const I = estado.entradas.impressora;
+  $('#controles').hidden = aba !== 'montagem';
+  $('#verTodas').hidden = aba !== 'pecas' || selecionada === 'todas';
+  if (aba === 'montagem') {
+    const M = montar(P, juntas);
+    visor.montagem(M, malhas, cores, manter);
+    $('#rotVisor').textContent = 'Braço montado: mova as seringas';
+    for (const inp of document.querySelectorAll('#controles input')) inp.nextElementSibling.textContent = fmt(M.pose.s[inp.dataset.junta], 0) + ' mm';
+    return;
+  }
+  if (selecionada !== 'todas' && malhas[selecionada]) {
+    const p = PECAS.find(x => x.id === selecionada);
+    visor.mostrar([{ malha: malhas[selecionada], cor: p.cor }], [I.x, I.y], manter);
+    $('#rotVisor').textContent = p.nome;
+    return;
+  }
+  const itens = []; let x = 0, y = 0, linha = 0; const larg = 440;
+  for (const p of PECAS) {
+    const m = malhas[p.id]; if (!m) continue;
+    const ex = m.bbox[1][0] - m.bbox[0][0], ey = m.bbox[1][1] - m.bbox[0][1];
+    if (x + ex > larg && x > 0) { x = 0; y -= linha + 12; linha = 0; }
+    itens.push({ malha: m, cor: p.cor, dx: x + ex / 2, dy: y - ey / 2 });
+    x += ex + 12; linha = Math.max(linha, ey);
+  }
+  visor.mostrar(itens, null, manter);
+  $('#rotVisor').textContent = 'Todas as peças (uma de cada)';
+}
 
 function cabe(m) {
   const I = estado.entradas.impressora;
@@ -47,25 +128,10 @@ function cabe(m) {
   return ((ex <= I.x && ey <= I.y) || (ex <= I.y && ey <= I.x)) && ez <= I.z;
 }
 
-function regenerar() {
-  P = derivar(estado);
-  const erros = [];
-  malhas = {};
-  const t0 = performance.now();
-  for (const p of PECAS) {
-    try { malhas[p.id] = gerarPeca(novoGeo, kernel, p, P); }
-    catch (err) { erros.push(`${p.nome}: ${err.message}`); }
-  }
-  $('#tempo').textContent = `${PECAS.length} peças geradas em ${fmt(performance.now() - t0, 0)} ms`;
-  $('#avisos').hidden = !erros.length;
-  $('#avisos').textContent = erros.length ? 'Não foi possível gerar: ' + erros.join('; ') : '';
-  tabela(); conferencia(); mostrar(!primeira); primeira = false;
-}
-
 function tabela() {
   const tb = $('#tabPecas tbody'); tb.innerHTML = '';
   let total = 0, massa = 0;
-  const rho = estado.entradas.material.densidade / 1000; // g/mm³
+  const rho = estado.entradas.material.densidade / 1000;
   for (const p of PECAS) {
     const m = malhas[p.id]; if (!m) continue;
     const q = p.qtd(P), ext = m.bbox[1].map((x, k) => x - m.bbox[0][k]);
@@ -84,28 +150,6 @@ function tabela() {
     tb.append(tr);
   }
   $('#resumo').textContent = `${total} peças impressas, cerca de ${fmt(massa, 0)} g de ${estado.entradas.material.nome}`;
-  $('#verTodas').classList.toggle('ativa', selecionada === 'todas');
-}
-
-function mostrar(manter = false) {
-  const I = estado.entradas.impressora;
-  if (selecionada !== 'todas' && malhas[selecionada]) {
-    const p = PECAS.find(x => x.id === selecionada);
-    visor.mostrar([{ malha: malhas[selecionada], cor: p.cor }], [I.x, I.y], manter);
-    $('#rotVisor').textContent = p.nome;
-    return;
-  }
-  // todas: distribui em fileiras
-  const itens = []; let x = 0, y = 0, linha = 0; const larg = 420;
-  for (const p of PECAS) {
-    const m = malhas[p.id]; if (!m) continue;
-    const ex = m.bbox[1][0] - m.bbox[0][0], ey = m.bbox[1][1] - m.bbox[0][1];
-    if (x + ex > larg && x > 0) { x = 0; y -= linha + 12; linha = 0; }
-    itens.push({ malha: m, cor: p.cor, dx: x + ex / 2, dy: y - ey / 2 });
-    x += ex + 12; linha = Math.max(linha, ey);
-  }
-  visor.mostrar(itens, null, manter);
-  $('#rotVisor').textContent = 'Todas as peças (uma de cada)';
 }
 
 function conferencia() {
@@ -114,14 +158,28 @@ function conferencia() {
     const ref = V24[k] !== undefined ? V24[k] : null;
     const comp = AJUSTE_LE[k] ? v + P.f_seringa : v;
     const dif = ref === null ? null : comp - ref;
-    tb.append(h('tr', {},
-      h('td', {}, h('code', {}, k)),
-      h('td', { class: 'num' }, fmt(comp, 2)),
+    tb.append(h('tr', {}, h('td', {}, h('code', {}, k)), h('td', { class: 'num' }, fmt(comp, 2)),
       h('td', { class: 'num' }, ref === null ? '—' : fmt(ref, 2)),
       h('td', { class: 'num ' + (dif !== null && Math.abs(dif) > 0.05 ? 'dif' : '') }, dif === null ? '' : (Math.abs(dif) < 0.005 ? '=' : (dif > 0 ? '+' : '') + fmt(dif, 2)))));
   }
 }
 
+function gerarFolhas() {
+  if (!folhasCache) folhasCache = folhasDasPecas(kernel, PECAS, P, estado.origem === 'v24' ? 'exemplo v24' : 'otimizado');
+  return folhasCache;
+}
+function desenhos() {
+  const box = $('#folhas'); box.innerHTML = '';
+  const fs = gerarFolhas();
+  fs.forEach((x, i) => {
+    const svg = paraSVG(x.folha), url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    const a = h('a', { class: 'folha', href: '#', title: 'Baixar SVG' }, h('img', { src: url, alt: `Desenho: ${x.nome}`, loading: 'lazy' }), `${i + 1}. ${x.nome}`);
+    a.addEventListener('click', ev => { ev.preventDefault(); baixar(svg, `${String(i + 1).padStart(2, '0')}-${x.id}.svg`, 'image/svg+xml'); });
+    box.append(a);
+  });
+}
+
+/* ---------- ações ---------- */
 function baixar(dados, nome, tipo) {
   const blob = dados instanceof Blob ? dados : new Blob([dados], { type: tipo });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nome;
@@ -129,48 +187,96 @@ function baixar(dados, nome, tipo) {
 }
 
 async function exportarZip() {
-  const bt = $('#btnZip'); bt.disabled = true; bt.textContent = 'Gerando…';
+  const bt = $('#btnZip'); bt.disabled = true; const txt = bt.textContent; bt.textContent = 'Gerando…';
   try {
-    const arquivos = [];
-    const linhas = ['Bucky: braço hidráulico por seringas', `Gerado em ${new Date().toLocaleString('pt-BR')}`, '', 'Peças (imprimir a quantidade indicada):'];
+    await new Promise(r => setTimeout(r, 20));
+    const arquivos = [], fs = gerarFolhas();
+    const linhas = ['Bucky: braço hidráulico com seringas', `Gerado em ${new Date().toLocaleString('pt-BR')}`,
+      estado.origem === 'v24' ? 'Configuração: exemplo bucky v24' : `Configuração otimizada (${CRITERIOS[estado.criterioUsado]?.rot || ''})`, '',
+      'Peças (imprimir a quantidade indicada):'];
     for (const p of PECAS) {
       const m = malhas[p.id]; if (!m) continue;
       const q = p.qtd(P);
       arquivos.push({ nome: `pecas/${p.id}_x${q}.stl`, dados: stlBinario(m, p.id) });
       linhas.push(`  ${String(q).padStart(2)} × ${p.nome}  (pecas/${p.id}_x${q}.stl)`);
     }
-    linhas.push('', 'A mão (palma, cubo e dedos) e os desenhos técnicos entram nas próximas etapas.');
-    const { seringas, bola, material, impressora, ...resto } = P;
-    arquivos.push({ nome: 'parametros.json', dados: JSON.stringify({ formato: 'bucky-app', versao: 1, estado, derivados: resto, fusion: nomesFusion(P) }, null, 2) });
+    arquivos.push({ nome: 'desenhos/desenhos.pdf', dados: pdfDeFolhas(fs.map(x => x.folha), A4) });
+    fs.forEach((x, i) => arquivos.push({ nome: `desenhos/svg/${String(i + 1).padStart(2, '0')}-${x.id}.svg`, dados: paraSVG(x.folha) }));
+    linhas.push('', 'Desenhos: desenhos/desenhos.pdf (uma folha A4 por peça) e desenhos/svg/.',
+      'Pinos da mão: fio de filamento ou arame no diâmetro Dpino.', '',
+      `Área de alcance: ${CRITERIOS.area.mostrar(R.m.A)}   Volume: ${CRITERIOS.volume.mostrar(R.m.V)}`);
+    const { seringas, meta, material, impressora, garra, travas, ...resto } = P;
+    arquivos.push({ nome: 'parametros.json', dados: JSON.stringify({ formato: 'bucky-app', versao: 2, estado, derivados: resto, garra: semFuncoes(garra), fusion: nomesFusion(P) }, null, 2) });
     arquivos.push({ nome: 'LEIAME.txt', dados: linhas.join('\r\n') });
-    baixar(await criarZip(arquivos), 'bucky-pecas.zip', 'application/zip');
-  } finally { bt.disabled = false; bt.textContent = 'Baixar todas as peças (.zip)'; }
+    baixar(await criarZip(arquivos), 'meu-bucky.zip', 'application/zip');
+  } finally { bt.disabled = false; bt.textContent = txt; }
+}
+const semFuncoes = o => JSON.parse(JSON.stringify(o));
+
+async function rodarOtimizador() {
+  if (ocupado || !kernel) return;
+  ocupado = true;
+  const bts = [$('#btnOtimizar'), $('#btnOtimizar2')].filter(Boolean);
+  bts.forEach(b => { b.disabled = true; b.textContent = 'Otimizando…'; });
+  try {
+    const Pin = derivar(estado);
+    const res = await otimizar(Pin, estado.entradas.criterio, msg => { bts.forEach(b => { b.textContent = msg; }); });
+    if (res.erro) { $('#avisos').hidden = false; $('#avisos').textContent = res.msg; return; }
+    Object.assign(estado.otimizados, paraDimensoes(res.r));
+    estado.origem = 'otimizado'; estado.criterioUsado = estado.entradas.criterio; estado.assinatura = assinatura();
+    $('#avisos').hidden = true;
+    salvar();
+    montarFormulario($('#painel'), estado, aoMudar, rodarOtimizador);
+    primeira = true; recalcular(true);
+  } finally {
+    ocupado = false;
+    bts.forEach(b => { b.disabled = false; });
+    $('#btnOtimizar').textContent = 'Otimizar';
+    const b2 = $('#btnOtimizar2'); if (b2) b2.textContent = 'Otimizar meu Bucky';
+  }
 }
 
-function aoMudar() {
+function aoMudar(tipo) {
+  if (tipo === 'dimensao' && estado.origem === 'otimizado') estado.assinatura = assinatura();
   salvar();
   clearTimeout(tempo);
-  tempo = setTimeout(regenerar, 200);
+  tempo = setTimeout(() => recalcular(true), 220);
+}
+
+function trocarAba(nova) {
+  aba = nova;
+  document.querySelectorAll('.aba-vis').forEach(b => { const a = b.dataset.aba === nova; b.classList.toggle('ativa', a); b.setAttribute('aria-selected', a ? 'true' : 'false'); });
+  $('#caixaVisor').hidden = nova === 'desenhos';
+  $('#painelPecas').hidden = nova !== 'pecas';
+  $('#painelDesenhos').hidden = nova !== 'desenhos';
+  if (nova === 'desenhos') { $('#folhas').innerHTML = '<p class="nota">Gerando as folhas…</p>'; setTimeout(desenhos, 20); }
+  else mostrar(false);
 }
 
 let visor;
 async function iniciar() {
-  montarFormulario($('#painel'), estado, aoMudar);
+  montarFormulario($('#painel'), estado, aoMudar, rodarOtimizador);
   visor = new Visor($('#visor'));
+  document.querySelectorAll('.aba-vis').forEach(b => b.addEventListener('click', () => trocarAba(b.dataset.aba)));
+  document.querySelectorAll('#controles input').forEach(inp => {
+    inp.value = Math.round(juntas[inp.dataset.junta] * 100);
+    inp.addEventListener('input', () => { juntas[inp.dataset.junta] = inp.value / 100; mostrar(true); });
+  });
   $('#verTodas').addEventListener('click', () => { selecionada = 'todas'; tabela(); mostrar(); });
   $('#btnZip').addEventListener('click', exportarZip);
-  $('#btnPadrao').addEventListener('click', () => {
+  $('#btnPdf').addEventListener('click', () => baixar(pdfDeFolhas(gerarFolhas().map(x => x.folha), A4), 'desenhos-bucky.pdf', 'application/pdf'));
+  $('#btnOtimizar').addEventListener('click', rodarOtimizador);
+  $('#btnExemplo').addEventListener('click', () => {
     estado = estadoPadrao(); estado.folgas = { ...FOLGAS_PADRAO }; salvar();
-    montarFormulario($('#painel'), estado, aoMudar); regenerar();
+    montarFormulario($('#painel'), estado, aoMudar, rodarOtimizador); primeira = true; recalcular(true);
   });
-  try {
-    kernel = await carregarKernel();
-  } catch (err) {
+  try { kernel = await carregarKernel(); }
+  catch (err) {
     $('#avisos').hidden = false;
     $('#avisos').textContent = 'Não foi possível carregar o gerador de peças (manifold-3d). Verifique a conexão e recarregue a página.';
     return;
   }
   $('#carregando').hidden = true;
-  regenerar();
+  recalcular(true);
 }
 iniciar();

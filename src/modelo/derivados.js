@@ -2,12 +2,13 @@
    medidas que as peças usam. As fórmulas reproduzem o modelo bucky v24 do Fusion,
    trocando a folga multiplicativa (tol) pelas folgas fixas de folgas.js. */
 import { FOLGAS_PADRAO } from './folgas.js';
+import { calcGarra } from './garra.js';
 
 export function derivar(estado) {
   const E = estado.entradas, O = estado.otimizados, C = estado.construcao;
   const F = { ...FOLGAS_PADRAO, ...(estado.folgas || {}) };
   const e = E.e, S = E.seringas;
-  const P = { ...O, ...C, ...F, e, nd: Math.round(Math.min(4, Math.max(2, E.nd))) };
+  const P = { ...O, ...C, ...F, e, nd: 4 };
 
   // ---- espessuras e larguras gerais
   P.hb = 2 * e;                       // base e disco
@@ -49,16 +50,30 @@ export function derivar(estado) {
   P.ombro_labio = e / 2;
   P.ombro_alt = P.ombro_lado + P.ombro_pescoco + P.ombro_labio;
 
-  // ---- antebraço e pulso
+  // ---- garra (4 dedos em planos deslocados; ver garra.js)
+  P.seringas = S; P.meta = E.meta; P.impressora = E.impressora; P.material = E.material;
+  P.travas = {};
+  P.travas.braco = { fenda: Math.max(1.5 * S.braco.ee, S.braco.ee + F.f_seringa) };
+  const g = calcGarra(P, { ao: O.ao, phig: O.phig, cgl: O.cgl });
+  P.garra = g;
+  P.tp = g.tp; P.tc = g.tc;
+  P.d4 = g.ok ? g.tp / 2 + g.uc + g.pescoco + S.garra.cf : 120;
+
+  // ---- antebraço e pulso. A palma fica entre o ressalto do antebraço e a travessa do pulso.
   P.trilho = 3 * e;                                 // largura do trilho
-  P.garfo = (O.L2 - O.d3) / 2;                      // comprimento do rasgo do garfo (v24: 4,405 cm fixo)
-  P.pulso_comp = (O.L2 - O.d3) - C.D1 - 2 * e;
-  P.pulso_rasgo = P.pulso_comp - P.garfo;
+  P.garfo = (O.L2 - O.d3) / 2;                      // rasgo do garfo (v24: 4,405 cm fixo)
+  P.pulso_rasgo = (O.L2 - O.d3) - C.D1 - 2 * e - P.garfo;
+  P.pulso_comp = P.pulso_rasgo + P.garfo + e / 2;   // a travessa fica logo depois da ponta do antebraço
   P.pulso_travessa = [e / 2, 7 * e];                // espessura, altura
-  P.gancho = { de: O.L2 - 2 * e - F.f_pressao, ate: O.L2 - e - F.f_pressao, alt: 2 * e / 3 };
+  const assento = P.tp + F.f_desliza;               // vão da palma
+  P.gancho = { de: O.L2 - assento - e, ate: O.L2 - assento, alt: 2 * e / 3 };
+  P.z_palma = O.L2 - assento / 2;                   // meio da palma, a partir do eixo 2
+
+  // ---- seringa da garra: afastada do antebraço para a aba do êmbolo passar fora dos dedos
+  const anelG = S.garra.D + F.f_seringa + e;
+  P.afastador_garra = Math.max(0, g.yD5 - e / 2 - anelG / 2);
 
   // ---- travas de seringa
-  P.travas = {};
   for (const k of ['braco', 'garra', 'comando']) {
     const s = S[k];
     P.travas[k] = {
@@ -66,7 +81,8 @@ export function derivar(estado) {
       assento: s.D + F.f_seringa,         // Ø do assento do corpo da seringa
       bico: s.db,                         // furo do bico
       larg: C.D1,                         // espessura do anel
-      pino: k === 'garra' ? 3 * e : 2 * e, // comprimento do pino
+      pino: 2 * e + (k === 'garra' ? P.afastador_garra : 0), // comprimento do pino
+      afastador: k === 'garra' ? P.afastador_garra : 0,
       canal: s.LE + F.f_seringa,          // largura do canal da aba do êmbolo
       fenda: Math.max(1.5 * s.ee, s.ee + F.f_seringa), // altura da fenda da aba
     };
@@ -79,10 +95,6 @@ export function derivar(estado) {
     P['curso_' + k] = P['cau_' + k] - s.cf;
   }
 
-  P.seringas = S;
-  P.bola = E.bola;
-  P.material = E.material;
-  P.impressora = E.impressora;
   return P;
 }
 
@@ -97,5 +109,6 @@ export function nomesFusion(P) {
     LE20: S.comando.LE, LE10: S.braco.LE, LE5: S.garra.LE, ee10: S.braco.ee,
     e: P.e, hb: P.hb, se: P.se, D0: P.D0, D1: P.D1, alpha: P.alpha, Dpino: P.Dpino,
     Lb: P.Lb, Rd: P.Rd, Rb: P.Rb, fe10: P.fe, nd: P.nd,
+    rp: 2 * P.garra.rp, alfa: P.garra.gam, Ld: P.garra.Lf,
   };
 }

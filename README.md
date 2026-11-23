@@ -1,21 +1,19 @@
-# Bucky · braço hidráulico por seringas
+# Bucky · braço hidráulico com seringas
 
-Site que gera as peças do braço a partir das seringas, da bola, do material e da impressora.
+Informe seus parâmetros e seu critério de otimização, e o site gera o seu Bucky otimizado:
+as peças em STL, o braço montado em 3D e os desenhos técnicos em PDF.
 Roda direto no navegador (sem etapa de build) e pode ser publicado no GitHub Pages.
 
 ## Estado
 
 | Etapa | Conteúdo | Situação |
 |---|---|---|
-| 1 | Parâmetros, derivados, folgas fixas e geração das peças estruturais em STL (+ .zip) | pronta |
-| 2 | Otimizador (alcance, volume, torque com a bola) e garra (palma, cubo, dedos) | próxima |
-| 3 | Montagem em 3D com as juntas, simulação das seringas e verificação de colisões | — |
-| 4 | Desenhos técnicos com cotas paramétricas no .zip | — |
+| 1 | Parâmetros, folgas fixas, peças estruturais em STL | pronta |
+| 2 | Otimizador (área ou volume de alcance, torque com a meta) e garra de 4 dedos | pronta |
+| 3 | Braço montado em 3D com as seringas móveis | pronta |
+| 4 | Desenhos técnicos (PDF e SVG) no .zip | pronta |
 
-Conferência da etapa 1 (`tests/comparar-v24.mjs`): com os valores padrão, as peças geradas têm o mesmo
-tamanho do bucky v24 do Fusion e volumes dentro de ±2 % (trava-êmbolo −5 % e atuador −4 %, redesenhados).
-A varredura (`tests/varredura.mjs`) gerou 3402 peças em 243 combinações de espessura, comprimentos,
-posição de A, raio do giro e diâmetro da seringa, sem falhas.
+Detalhes em `docs/02-otimizador-garra-montagem.md`.
 
 ## Estrutura
 
@@ -24,10 +22,12 @@ index.html            página do aplicativo
 src/
   main.js             liga formulário, gerador de peças, visor e exportação
   estilo.css
-  modelo/             parametros.js (entradas e padrões), folgas.js, derivados.js (fórmulas do v24)
+  modelo/             parametros.js, folgas.js, derivados.js, cinematica.js, garra.js, otimizador.js
   geometria/          kernel.js: manifold-3d (WebAssembly), perfis 2D, extrusões
-  pecas/              uma peça por arquivo; index.js lista a ordem e as quantidades
-  exportar/           stl.js (STL binário), zip.js (zip sem dependências)
+  pecas/              uma peça por arquivo (mao.js: palma, cubo, dedo); index.js lista a ordem e as quantidades
+  montagem/           posição de cada peça no braço montado
+  desenhos/           folhas A4 com vistas e cotas
+  exportar/           stl.js, pdf.js, zip.js (sem dependências)
   ui/                 formulario.js, visor3d.js (three.js)
 docs/                 revisão do modelo v24 e decisões
 referencia/fusion-v24 STL e geometria exportados do Fusion (base de comparação)
@@ -51,4 +51,7 @@ npm install
 node tests/comparar-v24.mjs
 node tests/varredura.mjs
 node tests/exemplo-zip.mjs
+node tests/otimizar.mjs
+node tests/montagem.mjs
+node tests/desenhos.mjs
 ```
