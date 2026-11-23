@@ -34,6 +34,11 @@ function campo(obj, chave, rotulo, unidade, aoMudar, opts = {}) {
 function grupo(titulo, aberto, cor, ...filhos) {
   const d = h('details', { class: 'grupo ' + cor }, h('summary', {}, titulo), h('div', { class: 'conteudo' }, ...filhos));
   if (aberto) d.open = true;
+  // sanfona: abrir um grupo fecha os outros, para a página não crescer demais
+  d.addEventListener('toggle', () => {
+    if (!d.open) return;
+    d.parentElement?.querySelectorAll(':scope > details.grupo[open]').forEach(o => { if (o !== d) o.open = false; });
+  });
   return d;
 }
 
@@ -63,7 +68,7 @@ export function montarFormulario(raiz, estado, aoMudar, aoOtimizar) {
     abas, paineis));
 
   // ---- meta
-  raiz.append(grupo('Meta', true, prox(),
+  raiz.append(grupo('Meta', false, prox(),
     h('p', { class: 'nota' }, 'A meta é o que se pretende movimentar com o braço, simplificado aqui para uma esfera com massa e diâmetro definidos por você.'),
     campo(E.meta, 'massa', 'Massa', 'g', ent, { min: 1, max: 2000 }),
     campo(E.meta, 'diametro', 'Diâmetro', 'mm', ent, { min: 20, max: 200 })));
@@ -81,7 +86,7 @@ export function montarFormulario(raiz, estado, aoMudar, aoOtimizar) {
   });
   raiz.append(grupo('Material', false, prox(), h('label', { class: 'campo', for: 'matSel' }, h('span', { class: 'rot' }, 'Filamento'), h('span', { class: 'val' }, sel)), cDens, cRes));
 
-  raiz.append(grupo('Espessura e impressora', true, prox(),
+  raiz.append(grupo('Espessura e impressora', false, prox(),
     campo(E, 'e', 'Espessura das placas (e)', 'mm', ent, { min: 1.6, max: 8, ajuda: 'base e disco usam 2e' }),
     campo(E.impressora, 'x', 'Mesa X', 'mm', ent, { min: 50, max: 1000 }),
     campo(E.impressora, 'y', 'Mesa Y', 'mm', ent, { min: 50, max: 1000 }),
@@ -95,7 +100,7 @@ export function montarFormulario(raiz, estado, aoMudar, aoOtimizar) {
     r.addEventListener('change', () => { E.criterio = k; ent(); });
     crit.append(h('label', { class: 'criterio', for: id }, r, h('span', {}, h('b', {}, c.rot), h('small', {}, c.ajuda))));
   }
-  raiz.append(grupo('Critério de otimização', true, prox(), crit,
+  raiz.append(grupo('Critério de otimização', false, prox(), crit,
     h('button', { type: 'button', class: 'btn primario largo', id: 'btnOtimizar2', onclick: aoOtimizar }, 'Otimizar meu Bucky')));
 
   // ---- avançado
