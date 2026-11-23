@@ -30,21 +30,23 @@ function travaCorpo(k, nome, qtd, cor) {
       const T = P.travas[k], R = T.anel / 2, h = T.larg;
       const anel = g.extrudar(g.circulo(R).subtract(g.circulo(T.bico / 2)), h / 2)
         .add(g.extrudar(g.circulo(R).subtract(g.circulo(T.assento / 2)), h / 2, h / 2));
-      const pino = g.cilindro(P.D1 / 2, T.pino + 2.5).rotate([90, 0, 0]).translate([0, -(R - 2.5), h / 2]);
+      let pino = g.cilindro(P.D1 / 2, T.pino + 2.5).rotate([90, 0, 0]).translate([0, -(R - 2.5), h / 2]);
+      if (T.afastador > 0.5) // colar que mantém a seringa afastada da placa
+        pino = pino.add(g.cilindro(P.D1 / 2 + P.e / 2, T.afastador + 2.5).rotate([90, 0, 0]).translate([0, -(R - 2.5), h / 2]));
       return anel.add(pino);
     },
   };
 }
-export const travaCorpoBraco = travaCorpo('braco', 'Trava-corpo D10', 3, '#8a7cf0');
-export const travaCorpoGarra = travaCorpo('garra', 'Trava-corpo D5', 1, '#8a7cf0');
-export const travaCorpoComando = travaCorpo('comando', 'Trava-corpo D20', 4, '#8a7cf0');
+export const travaCorpoBraco = travaCorpo('braco', 'Trava-corpo do braço', 3, '#8a7cf0');
+export const travaCorpoGarra = travaCorpo('garra', 'Trava-corpo da garra', 1, '#8a7cf0');
+export const travaCorpoComando = travaCorpo('comando', 'Trava-corpo de comando', 4, '#8a7cf0');
 
 /* Trava-êmbolo: canal em C onde a aba do êmbolo entra pela frente (y = 0).
    A haste do êmbolo sai pela boca (lado +z, entre os lábios fe). O pino Ø D1 sai do fundo,
    ao longo de y, no plano da parede de trás do canal: fica a (fenda + parede)/2 além do
    meio da aba. Esse desvio entra no comprimento pino a pino (derivados.js). */
 export const travaEmbolo = {
-  id: 'trava_embolo', nome: 'Trava-êmbolo D10', qtd: () => 3, cor: '#5aa9e6', seringa: 'braco',
+  id: 'trava_embolo', nome: 'Trava-êmbolo', qtd: () => 3, cor: '#5aa9e6', seringa: 'braco',
   gerar(g, P) {
     const T = P.travas.braco, p = P.e / 3, W = T.canal + 2 * p, H = T.fenda + 2 * p;
     const boca = Math.max(2, T.canal - 2 * P.fe), L = T.canal;

@@ -1,18 +1,18 @@
-/* Formulário de parâmetros: monta os campos a partir das listas de parametros.js e
-   grava direto no objeto de estado. Chama aoMudar() a cada alteração válida. */
+/* Formulário de parâmetros: monta os campos e grava direto no objeto de estado.
+   aoMudar(tipo) é chamado a cada alteração válida; tipo = 'entrada' | 'construcao' | 'dimensao'. */
 import { SERINGA_CAMPOS, SERINGAS, ROTULOS } from '../modelo/parametros.js';
 import { DESCRICAO_FOLGAS, FOLGAS_PADRAO } from '../modelo/folgas.js';
+import { CRITERIOS } from '../modelo/otimizador.js';
 
-const h = (tag, attrs = {}, ...filhos) => {
+export const h = (tag, attrs = {}, ...filhos) => {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
     if (k === 'class') el.className = v; else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
-    else if (v !== undefined && v !== null) el.setAttribute(k, v);
+    else if (v !== undefined && v !== null && v !== false) el.setAttribute(k, v === true ? '' : v);
   }
-  for (const f of filhos.flat()) if (f !== null && f !== undefined) el.append(f.nodeType ? f : document.createTextNode(f));
+  for (const f of filhos.flat()) if (f !== null && f !== undefined && f !== false) el.append(f.nodeType ? f : document.createTextNode(f));
   return el;
 };
-export { h };
 
 let _id = 0;
 function campo(obj, chave, rotulo, unidade, aoMudar, opts = {}) {
@@ -31,24 +31,26 @@ function campo(obj, chave, rotulo, unidade, aoMudar, opts = {}) {
     h('span', { class: 'val' }, inp, h('span', { class: 'u' }, unidade || '')));
 }
 
-function grupo(titulo, aberto, ...filhos) {
-  const d = h('details', { class: 'grupo' }, h('summary', {}, titulo), ...filhos);
+function grupo(titulo, aberto, cor, ...filhos) {
+  const d = h('details', { class: 'grupo ' + cor }, h('summary', {}, titulo), h('div', { class: 'conteudo' }, ...filhos));
   if (aberto) d.open = true;
   return d;
 }
 
-export function montarFormulario(raiz, estado, aoMudar) {
+export function montarFormulario(raiz, estado, aoMudar, aoOtimizar) {
   raiz.innerHTML = '';
   const E = estado.entradas;
+  const ent = () => aoMudar('entrada'), con = () => aoMudar('construcao'), dim = () => aoMudar('dimensao');
+  let cor = 0; const prox = () => (cor++ % 2 ? 'amarelo' : 'azul');
 
   // ---- seringas
   const abas = h('div', { class: 'abas', role: 'tablist' });
   const paineis = h('div', {});
   Object.entries(SERINGAS).forEach(([k, s], i) => {
-    const bt = h('button', { type: 'button', role: 'tab', class: 'aba' + (i === 0 ? ' ativa' : ''), 'aria-selected': i === 0 ? 'true' : 'false' }, s.nome.replace('Seringa ', '').replace(/^d[oa] /, ''));
-    const pn = h('div', { class: 'painel-seringa', role: 'tabpanel', hidden: i === 0 ? null : '' },
-      h('p', { class: 'nota' }, `${s.qtd} × ${s.nome}: ${s.uso}.`),
-      ...SERINGA_CAMPOS.map(c => campo(E.seringas[k], c.k, c.rotulo, c.u, aoMudar, { min: c.min, max: c.max })));
+    const bt = h('button', { type: 'button', role: 'tab', class: 'aba' + (i === 0 ? ' ativa' : ''), 'aria-selected': i === 0 ? 'true' : 'false' }, s.curto);
+    const pn = h('div', { class: 'painel-seringa', role: 'tabpanel', hidden: i !== 0 },
+      h('p', { class: 'nota' }, `${s.nome} (${s.qtd}). ${s.uso}`),
+      ...SERINGA_CAMPOS.map(c => campo(E.seringas[k], c.k, c.rotulo, c.u, ent, { min: c.min, max: c.max })));
     bt.addEventListener('click', () => {
       abas.querySelectorAll('.aba').forEach(b => { b.classList.remove('ativa'); b.setAttribute('aria-selected', 'false'); });
       paineis.querySelectorAll('.painel-seringa').forEach(p => { p.hidden = true; });
@@ -56,55 +58,62 @@ export function montarFormulario(raiz, estado, aoMudar) {
     });
     abas.append(bt); paineis.append(pn);
   });
-  raiz.append(grupo('Seringas', true,
-    h('p', { class: 'nota' }, 'Meça com paquímetro. cf e ca vão da face do corpo onde começa o bico até o meio da aba do êmbolo: fechado (êmbolo empurrado) e aberto (puxado até a última marca útil).'),
+  raiz.append(grupo('Seringas', true, prox(),
+    h('p', { class: 'nota' }, 'Medidas com paquímetro. Os comprimentos vão da face do corpo onde começa o bico até o meio da aba do êmbolo: fechado com o êmbolo todo empurrado, aberto puxado até a última marca útil.'),
     abas, paineis));
 
-  // ---- bola, material, impressão
-  raiz.append(grupo('Bola', true,
-    campo(E.bola, 'massa', 'Massa', 'g', aoMudar, { min: 1, max: 2000 }),
-    campo(E.bola, 'diametro', 'Diâmetro', 'mm', aoMudar, { min: 10, max: 200 })));
+  // ---- meta
+  raiz.append(grupo('Meta', true, prox(),
+    h('p', { class: 'nota' }, 'A meta é o que se pretende movimentar com o braço, simplificado aqui para uma esfera com massa e diâmetro definidos por você.'),
+    campo(E.meta, 'massa', 'Massa', 'g', ent, { min: 1, max: 2000 }),
+    campo(E.meta, 'diametro', 'Diâmetro', 'mm', ent, { min: 20, max: 200 })));
 
+  // ---- material
   const presets = { PLA: [1.24, 50], PETG: [1.27, 45], ABS: [1.04, 40] };
   const sel = h('select', { id: 'matSel' }, ...Object.keys(presets).map(n => h('option', { value: n }, n)), h('option', { value: 'outro' }, 'Outro'));
   sel.value = presets[E.material.nome] ? E.material.nome : 'outro';
-  const cDens = campo(E.material, 'densidade', 'Densidade', 'g/cm³', aoMudar, { min: 0.5, max: 3 });
-  const cRes = campo(E.material, 'resistencia', 'Resistência', 'MPa', aoMudar, { min: 5, max: 200 });
+  const cDens = campo(E.material, 'densidade', 'Densidade', 'g/cm³', ent, { min: 0.5, max: 3 });
+  const cRes = campo(E.material, 'resistencia', 'Resistência', 'MPa', ent, { min: 5, max: 200 });
   sel.addEventListener('change', () => {
     E.material.nome = sel.value;
     if (presets[sel.value]) { [E.material.densidade, E.material.resistencia] = presets[sel.value]; cDens.querySelector('input').__sync(); cRes.querySelector('input').__sync(); }
-    aoMudar();
+    ent();
   });
-  raiz.append(grupo('Material', false, h('label', { class: 'campo', for: 'matSel' }, h('span', { class: 'rot' }, 'Filamento'), h('span', { class: 'val' }, sel)), cDens, cRes));
+  raiz.append(grupo('Material', false, prox(), h('label', { class: 'campo', for: 'matSel' }, h('span', { class: 'rot' }, 'Filamento'), h('span', { class: 'val' }, sel)), cDens, cRes));
 
-  raiz.append(grupo('Espessura e impressora', true,
-    campo(E, 'e', 'Espessura das placas (e)', 'mm', aoMudar, { min: 1.6, max: 8, ajuda: 'base e disco usam 2e' }),
-    campo(E.impressora, 'x', 'Mesa X', 'mm', aoMudar, { min: 50, max: 1000 }),
-    campo(E.impressora, 'y', 'Mesa Y', 'mm', aoMudar, { min: 50, max: 1000 }),
-    campo(E.impressora, 'z', 'Altura Z', 'mm', aoMudar, { min: 20, max: 1000 })));
+  raiz.append(grupo('Espessura e impressora', true, prox(),
+    campo(E, 'e', 'Espessura das placas (e)', 'mm', ent, { min: 1.6, max: 8, ajuda: 'base e disco usam 2e' }),
+    campo(E.impressora, 'x', 'Mesa X', 'mm', ent, { min: 50, max: 1000 }),
+    campo(E.impressora, 'y', 'Mesa Y', 'mm', ent, { min: 50, max: 1000 }),
+    campo(E.impressora, 'z', 'Altura Z', 'mm', ent, { min: 20, max: 1000 })));
 
-  const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'Número de dedos' });
-  for (const n of [2, 3, 4]) {
-    const b = h('button', { type: 'button', class: n === E.nd ? 'ativa' : '', 'aria-pressed': n === E.nd ? 'true' : 'false' }, String(n));
-    b.addEventListener('click', () => { E.nd = n; seg.querySelectorAll('button').forEach(x => { x.classList.toggle('ativa', x === b); x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); }); aoMudar(); });
-    seg.append(b);
+  // ---- critério
+  const crit = h('div', { class: 'criterios', role: 'radiogroup', 'aria-label': 'Critério de otimização' });
+  for (const [k, c] of Object.entries(CRITERIOS)) {
+    const id = 'crit_' + k;
+    const r = h('input', { type: 'radio', name: 'criterio', id, value: k, checked: E.criterio === k });
+    r.addEventListener('change', () => { E.criterio = k; ent(); });
+    crit.append(h('label', { class: 'criterio', for: id }, r, h('span', {}, h('b', {}, c.rot), h('small', {}, c.ajuda))));
   }
-  raiz.append(grupo('Garra', false, h('div', { class: 'campo' }, h('span', { class: 'rot' }, 'Dedos'), seg),
-    h('p', { class: 'nota' }, 'A palma, o cubo e os dedos entram na próxima etapa, junto com o otimizador da garra.')));
-
-  // ---- otimizados
-  const O = estado.otimizados;
-  raiz.append(grupo('Dimensões do braço', false,
-    h('p', { class: 'nota' }, 'Por enquanto, valores do bucky v24. Na próxima etapa o otimizador calcula estes números a partir das seringas e da bola.'),
-    ...Object.keys(O).map(k => campo(O, k, `${k} · ${ROTULOS[k][0]}`, 'mm', aoMudar, { min: 1, max: 1000, ajuda: ROTULOS[k][1] }))));
+  raiz.append(grupo('Critério de otimização', true, prox(), crit,
+    h('button', { type: 'button', class: 'btn primario largo', id: 'btnOtimizar2', onclick: aoOtimizar }, 'Otimizar meu Bucky')));
 
   // ---- avançado
   const C = estado.construcao;
   estado.folgas = estado.folgas || { ...FOLGAS_PADRAO };
-  const unid = { alpha: '°', inclinacao_comando: '°', Fin: 'N', eta: '', FS: '', n_comando: '' };
-  raiz.append(grupo('Avançado', false,
-    h('h4', {}, 'Construção'),
-    ...Object.keys(C).map(k => campo(C, k, ROTULOS[k][0], unid[k] ?? 'mm', aoMudar, { min: 0, max: 1000, ajuda: ROTULOS[k][1] })),
+  const GARRA = ['ac', 'aperto', 'ponta_dedo', 'folga_meta', 'folga_abertura', 'atrito'];
+  const BRACO = Object.keys(C).filter(k => !GARRA.includes(k));
+  const rot = k => ROTULOS[k] || [k, '', ''];
+  const O = estado.otimizados;
+  raiz.append(grupo('Avançado', false, prox(),
+    h('p', { class: 'nota' }, 'Valores de construção que funcionaram no protótipo. Mude só se souber o efeito.'),
+    h('h4', {}, 'Construção e forças'),
+    ...BRACO.map(k => campo(C, k, rot(k)[0], rot(k)[2], con, { min: 0, max: 1000, ajuda: rot(k)[1] })),
+    h('h4', {}, 'Garra'),
+    ...GARRA.map(k => campo(C, k, rot(k)[0], rot(k)[2], con, { min: -60, max: 200, ajuda: rot(k)[1] })),
     h('h4', {}, 'Folgas (no diâmetro)'),
-    ...Object.keys(FOLGAS_PADRAO).map(k => campo(estado.folgas, k, DESCRICAO_FOLGAS[k], 'mm', aoMudar, { min: 0, max: 6 }))));
+    ...Object.keys(FOLGAS_PADRAO).map(k => campo(estado.folgas, k, DESCRICAO_FOLGAS[k], 'mm', con, { min: 0, max: 6 })),
+    h('h4', {}, 'Dimensões (ajuste manual)'),
+    h('p', { class: 'nota' }, 'O otimizador preenche estes valores. Você pode ajustar à mão depois.'),
+    ...Object.keys(O).map(k => campo(O, k, `${k} · ${rot(k)[0]}`, rot(k)[2], dim, { min: -90, max: 1000, ajuda: rot(k)[1] }))));
 }
