@@ -4,7 +4,7 @@ import { estadoPadrao } from './modelo/parametros.js';
 import { derivar, nomesFusion } from './modelo/derivados.js';
 import { FOLGAS_PADRAO } from './modelo/folgas.js';
 import { avaliar, paraDimensoes } from './modelo/cinematica.js';
-import { otimizar, CRITERIOS } from './modelo/otimizador.js';
+import { otimizar, otimizarPareto, CRITERIOS } from './modelo/otimizador.js';
 import { montar } from './montagem/montagem.js';
 import { PECAS, gerarPeca } from './pecas/index.js';
 import { folhasDasPecas, A4 } from './desenhos/desenhar.js';
@@ -71,12 +71,12 @@ function resultado() {
   const rho = estado.entradas.material.densidade / 1000;
   let massa = 0; for (const p of PECAS) if (malhas[p.id]) massa += p.qtd(P) * malhas[p.id].volume * rho;
   const m = [
-    ['area', CRITERIOS.area.mostrar(R.m.A), 'Área de alcance'],
+    [crit === 'pareto' ? 'pareto' : 'area', CRITERIOS.area.mostrar(R.m.A), 'Área de alcance'],
     ['volume', CRITERIOS.volume.mostrar(R.m.V), 'Volume de alcance'],
     ['', `${fmt(P.L1, 0)} / ${fmt(P.L2, 0)} mm`, 'Braço / antebraço'],
     ['', `${fmt(R.FS1, 2)} / ${fmt(R.FS2, 2)}`, 'Segurança ombro / cotovelo'],
     ['', `${fmt(P.garra.FS || 0, 1)}`, 'Segurança da pega'],
-    ['', `${fmt(massa, 0)} g`, 'Plástico impresso'],
+    [crit === 'pareto' ? 'pareto' : '', `${fmt(massa, 0)} g`, 'Plástico impresso'],
   ];
   box.append(h('div', { class: 'metricas' }, ...m.map(([k, v, r]) => h('div', { class: 'metrica' + (k && k === crit ? ' destaque' : '') }, h('div', { class: 'v' }, v), h('div', { class: 'r' }, r)))));
   const todas = [...R.checks, ...(P.garra.checks || [])];
@@ -84,7 +84,36 @@ function resultado() {
   const det = h('details', { class: 'checks' }, h('summary', {}, `Verificações (${todas.length - falhas} de ${todas.length} atendidas)`),
     h('ul', {}, ...todas.map(([n, v]) => h('li', { class: v < 0 ? 'nao' : '' }, h('span', {}, n), h('span', {}, v < 0 ? 'não atende' : 'ok')))));
   if (falhas) det.open = true;
+  if (estado.criterioUsado === 'pareto' && estado.pareto?.length && !desat) box.append(graficoPareto());
   box.append(det);
+}
+
+/* Curva de Pareto: área de alcance × plástico estimado. Clicar num ponto aplica aquela configuração. */
+function graficoPareto() {
+  const pts = estado.pareto, W = 260, Hh = 170, m = { l: 40, r: 10, t: 10, b: 34 };
+  const gs = pts.map(p => p.g), As = pts.map(p => p.A / 100);
+  const g0 = Math.min(...gs), g1 = Math.max(...gs), a0 = Math.min(...As), a1 = Math.max(...As);
+  const pad = (a, b) => { const d = (b - a) || Math.max(1, a * 0.1); return [a - d * 0.12, b + d * 0.12]; };
+  const [x0, x1] = pad(g0, g1), [y0, y1] = pad(a0, a1);
+  const X = g => m.l + (g - x0) / (x1 - x0) * (W - m.l - m.r), Y = a => Hh - m.b - (a - y0) / (y1 - y0) * (Hh - m.t - m.b);
+  const ns = 'http://www.w3.org/2000/svg', el = (t, at) => { const e = document.createElementNS(ns, t); for (const k in at) e.setAttribute(k, at[k]); return e; };
+  const svg = el('svg', { viewBox: `0 0 ${W} ${Hh}`, class: 'pareto-svg', role: 'img', 'aria-label': 'Curva de Pareto: área de alcance por plástico gasto' });
+  svg.append(el('line', { x1: m.l, y1: Hh - m.b, x2: W - m.r, y2: Hh - m.b, class: 'eixo' }), el('line', { x1: m.l, y1: m.t, x2: m.l, y2: Hh - m.b, class: 'eixo' }));
+  const txt = (x, y, s, at = {}) => { const t = el('text', { x, y, ...at }); t.textContent = s; svg.append(t); };
+  txt(m.l, Hh - m.b + 13, fmt(x0, 0), { 'text-anchor': 'start' }); txt(W - m.r, Hh - m.b + 13, fmt(x1, 0), { 'text-anchor': 'end' });
+  txt((m.l + W - m.r) / 2, Hh - 4, 'plástico estimado (g)', { 'text-anchor': 'middle', class: 'rotulo' });
+  txt(m.l - 4, Y(y1) + 4, fmt(y1, 0), { 'text-anchor': 'end' }); txt(m.l - 4, Y(y0) + 4, fmt(y0, 0), { 'text-anchor': 'end' });
+  txt(12, (m.t + Hh - m.b) / 2, 'área (cm²)', { 'text-anchor': 'middle', class: 'rotulo', transform: `rotate(-90 12 ${(m.t + Hh - m.b) / 2})` });
+  svg.append(el('polyline', { points: pts.map(p => `${X(p.g)},${Y(p.A / 100)}`).join(' '), class: 'linha' }));
+  pts.forEach((p, i) => {
+    const c = el('circle', { cx: X(p.g), cy: Y(p.A / 100), r: i === estado.paretoEscolhido ? 6.5 : 5, class: 'ponto' + (i === estado.paretoEscolhido ? ' escolhido' : ''), tabindex: 0 });
+    const t = el('title', {}); t.textContent = `${fmt(p.A / 100, 0)} cm² · ~${fmt(p.g, 0)} g · braço ${p.dims.L1}/${p.dims.L2} mm`; c.append(t);
+    const escolher = () => { estado.paretoEscolhido = i; Object.assign(estado.otimizados, p.dims); estado.assinatura = assinatura(); salvar(); montarFormulario($('#painel'), estado, aoMudar, rodarOtimizador); recalcular(true); };
+    c.addEventListener('click', escolher); c.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); escolher(); } });
+    svg.append(c);
+  });
+  return h('div', { class: 'pareto' }, h('div', { class: 'pareto-tit' }, 'Alcance × plástico'), svg,
+    h('p', { class: 'pareto-ajuda' }, 'Cada ponto é o maior alcance possível para aquele gasto de plástico. Clique num ponto para usar essa configuração. O ponto inicial é o de melhor equilíbrio.'));
 }
 
 /* ---------- visualização ---------- */
@@ -204,9 +233,18 @@ async function rodarOtimizador() {
   bts.forEach(b => { b.disabled = true; b.textContent = 'Otimizando…'; });
   try {
     const Pin = derivar(estado);
-    const res = await otimizar(Pin, estado.entradas.criterio, msg => { bts.forEach(b => { b.textContent = msg; }); });
+    const prog = msg => { bts.forEach(b => { b.textContent = msg; }); };
+    const pareto = estado.entradas.criterio === 'pareto';
+    const res = pareto ? await otimizarPareto(Pin, prog) : await otimizar(Pin, estado.entradas.criterio, prog);
     if (res.erro) { $('#avisos').hidden = false; $('#avisos').textContent = res.msg; return; }
-    Object.assign(estado.otimizados, paraDimensoes(res.r));
+    if (pareto) {
+      estado.pareto = res.frente.map(p => ({ g: p.g, A: p.A, dims: paraDimensoes(p.r) }));
+      estado.paretoEscolhido = res.joelho;
+      Object.assign(estado.otimizados, estado.pareto[res.joelho].dims);
+    } else {
+      estado.pareto = null;
+      Object.assign(estado.otimizados, paraDimensoes(res.r));
+    }
     estado.origem = 'otimizado'; estado.criterioUsado = estado.entradas.criterio; estado.assinatura = assinatura();
     $('#avisos').hidden = true;
     salvar();

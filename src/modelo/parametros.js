@@ -94,5 +94,7 @@ export function estadoPadrao() {
     origem: 'v24',  // 'v24' (exemplo) ou 'otimizado'
     criterioUsado: '',
     assinatura: '',
+    pareto: null,        // pontos da curva alcance × plástico (critério Pareto)
+    paretoEscolhido: 0,
   };
 }
