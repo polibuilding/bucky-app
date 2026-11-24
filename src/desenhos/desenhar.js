@@ -86,6 +86,7 @@ const COTAS = {
     c.cota([0, 0], [G.o, 0], 'o', G.o, -(G.rh * c.k) - 8, { h: true });
     c.cota([G.o, 0], [G.o, G.rh], 'rh', G.rh, (G.o * c.k) + 10, { v: true });
     c.cota([0, 0], [0, -G.yD5], 'eixo da seringa da garra', G.yD5, -(G.o * c.k) - 14, { v: true });
+    c.furo([0, 0], G.furo_cubo / 2, '1,2 · 3e', G.furo_cubo, 135);
     f.cota([G.Rcub, -G.tc / 2], [G.Rcub, G.tc / 2], '2e', G.tc, 8, { v: true });
   },
   dedo(P, c) {

@@ -56,14 +56,16 @@ export const cubo = {
     const r_in = Math.min(G.r_cauda, G.rh - (G.tc / 2) * Math.tan(rad(G.phio)) - G.bd / (2 * Math.cos(rad(G.phio)))) - f;
     const meia = (tf + f) / 2 + e;
     let s = g.uniao([g.circulo(o + meia), ...DEDOS.map(d => garfo(g, d, o, meia, G.rh + P.Dpino / 2 + e))]);
-    s = s.subtract(cruz(g, P, f));
+    // furo central redondo (como no cubo do v24): o cubo gira livre em volta do trilho em cruz
+    // e passa pela trava da palma sem prender
+    s = s.subtract(g.circulo(G.furo_cubo / 2));
     for (const d of DEDOS) s = s.subtract(faixaDedo(g, d, o, tf + f, r_in, G.Rcub + 5));
     let m = g.extrudar(s, G.tc, -G.tc / 2);
     for (const d of DEDOS) m = m.subtract(furoFio(g, d, o, G.rh, 0, P.Dpino + P.f_giro, 3 * G.Rcub));
     // pega da aba do êmbolo da seringa da garra, atrás do cubo (z = −pescoço), centrada em y = −yD5
     const zf = -G.pescoco, fenda = P.travas.garra.fenda, p = e / 3;
     const canal = Sg.LE + P.f_seringa, W = canal / 2 + p, yc = -G.yD5;
-    const pescoco = g.caixa(G.pega_x[0], yc, zf, G.pega_x[1], -(1.5 * e + f), -G.tc / 2 + 0.01);
+    const pescoco = g.caixa(G.pega_x[0], yc, zf, G.pega_x[1], -G.furo_cubo / 2, -G.tc / 2 + 0.01);
     const bloco = g.caixa(-W, yc - W, zf - fenda / 2 - p, W, yc + W, zf + fenda / 2 + p);
     const aba = g.caixa(-canal / 2, yc - W - 1, zf - fenda / 2, canal / 2, yc + canal / 2, zf + fenda / 2);
     const boca = Math.max(2, canal - 2 * P.fe);

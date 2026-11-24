@@ -66,6 +66,7 @@ export function calcGarra(P, x) {
   // cubo: o pino fica a u atrás dos pivôs; a pega da aba do êmbolo fica mais atrás,
   // depois de onde a cauda alcança, para atravessar o plano do dedo vizinho sem bater.
   g.tc = 2 * P.e;
+  g.furo_cubo = 1.2 * 3 * P.e;                     // furo central redondo do cubo (v24: 3·e·1,2)
   g.pescoco = (g.ff - g.fi + P.e + P.Dpino) * Math.cos(rad(g.phio)) + pl.tf + P.f_desliza;
   g.folga_cubo = g.uo - g.tp / 2 - g.tc / 2 - P.f_desliza; // cubo aberto x palma
   // pescoço da pega: entre o plano x = −o e a cauda do dedo que fica no plano y = −o
